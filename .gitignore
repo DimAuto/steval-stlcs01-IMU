@@ -1,0 +1,6 @@
+Drivers/**
+EWARM/**
+.mxproject
+.project
+stm32-imu.ioc
+Middlewares/**
