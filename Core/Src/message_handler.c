@@ -20,9 +20,9 @@ static void init_message_t(void);
 static void handler(UART_select device);
 
 extern osEventFlagsId_t wait_for_ack;
-
-
-extern osThreadId_t gyroCalibrationTaskHandle;
+extern osEventFlagsId_t magnCalibStart;
+extern osEventFlagsId_t accCalibStart;
+extern osEventFlagsId_t gyroCalibStart;
 
 uint8_t flag_connected_toIris = 0;
 
@@ -240,18 +240,16 @@ void handler(UART_select device){
         ublox_transmit_rtc(msg.cmd, device);
         break;
     case 0xA0:
-//        gpio_setGNSS_RESET(PIN_LOW);
-        HAL_Delay(500);
-//        gpio_setGNSS_RESET(PIN_HIGH);
+//        ;
         break;
     case 0xC0:
-    	osThreadResume(gyroCalibrationTaskHandle);
+    	osEventFlagsSet(gyroCalibStart, 0x00000001U);
     	break;
     case 0xC1:
-    	magnCalStart();
+    	osEventFlagsSet(magnCalibStart, 0x00000001U);
 		break;
     case 0xC2:
-		accCalStart();
+    	osEventFlagsSet(accCalibStart, 0x00000001U);
 		break;
     default:
         break;

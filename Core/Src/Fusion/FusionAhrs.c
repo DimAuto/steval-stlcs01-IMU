@@ -177,12 +177,12 @@ void FusionAhrsUpdate(FusionAhrs *const ahrs, const FusionVector gyroscope, cons
     }
     else{
     	magn_length_temp /= magn_av_counter;
-    	magn_av_counter = 0;
     	ahrs->magnVectorLength = magn_length_temp / ahrs->magnVectorLengthInit;
     	magn_length_temp = 0;
+    	magn_av_counter = 0;
     }
 
-    if((ahrs->magnVectorLength <= 1.14f) && (ahrs->magnVectorLength >= 0.86f)){
+    if((ahrs->magnVectorLength <= 1.25f) && (ahrs->magnVectorLength >= 0.75f)){
     	ahrs->magnTransientField = 0;
     }
     else{
@@ -227,7 +227,7 @@ void FusionAhrsUpdate(FusionAhrs *const ahrs, const FusionVector gyroscope, cons
     // Calculate magnetometer feedback
         FusionVector halfMagnetometerFeedback = FUSION_VECTOR_ZERO;
         ahrs->magnetometerIgnored = true;
-        if (FusionVectorIsZero(magnetometer) == false) {
+        if ((FusionVectorIsZero(magnetometer) == false) && (ahrs->magnTransientField == 0)) {
 
             // Calculate direction of magnetic field indicated by algorithm
             const FusionVector halfMagnetic = HalfMagnetic(ahrs);
@@ -236,7 +236,7 @@ void FusionAhrsUpdate(FusionAhrs *const ahrs, const FusionVector gyroscope, cons
             ahrs->halfMagnetometerFeedback = Feedback(FusionVectorNormalise(FusionVectorCrossProduct(halfGravity, magnetometer)), halfMagnetic);
 
             // Don't ignore magnetometer if magnetic error below threshold
-            if ((ahrs->initialising == true) || ((FusionVectorMagnitudeSquared(ahrs->halfMagnetometerFeedback) <= ahrs->settings.magneticRejection)  && (ahrs->magnTransientField == 0))) {
+            if ((ahrs->initialising == true) || (FusionVectorMagnitudeSquared(ahrs->halfMagnetometerFeedback) <= ahrs->settings.magneticRejection)) {
                 ahrs->magnetometerIgnored = false;
                 ahrs->magneticRecoveryTrigger -= 9;
                 osEventFlagsSet(magnetic_interf, 0x00000000U);

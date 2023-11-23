@@ -378,10 +378,6 @@ uint32_t Flash_Read_Matrix (uint32_t StartSectorAddress, FusionMatrix *data)
 }
 
 
-
-
-
-
 void Convert_To_Str (uint32_t *Data, char *Buf)
 {
 	int numberofbytes = ((strlen((char *)Data)/4) + ((strlen((char *)Data) % 4) != 0)) *4;

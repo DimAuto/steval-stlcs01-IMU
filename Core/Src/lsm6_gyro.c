@@ -14,10 +14,15 @@
 #include "flash_memory.h"
 #include "Fusion/Fusion.h"
 #include "ellipsoid_fit.h"
+#include "spi.h"
+#include "main.h"
 
 
 // I2C object
-I2C_HandleTypeDef hi2c2;
+SPI_HandleTypeDef hspi2;
+SPI_CS_t lsm6_cs;
+SPI_CS_t lsm303_m_cs;
+SPI_CS_t lsm303_a_cs;
 
 //static void debugPrintMEMS(mems_data_t *mems_data);
 
@@ -40,128 +45,122 @@ FusionVector gyro_mean;
 extern FusionAhrs ahrs;
 
 void tick_gyro(mems_data_t * mems_data){
-
-    lsm6_acc_read(mems_data);
+	lsm303_acc_read(mems_data);
     lis3_magn_read(mems_data);
     gyro_read(mems_data);
+//    debugPrintMEMS(mems_data);
 }
 
 
-uint8_t lsm6_bus_init(void)
+HAL_StatusTypeDef lsm6_bus_init(void)
 {
-
-  hi2c2.Instance = I2C2;
-//hi2c2.Init.Timing = 0x00B03FDB;
-  hi2c2.Init.Timing = 0x307075B1;
-  hi2c2.Init.OwnAddress1 = 0;
-  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c2.Init.OwnAddress2 = 0;
-  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
-  {
-    return 1;
-  }
-
-  /** Configure Analogue filter
-  */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    return 2;
-  }
-
-  /** Configure Digital filter
-  */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
-  {
-    return 3;
-  }
-  return 0;
+	return SPI_Init(&hspi2);
 
 }
 
 uint8_t whoIam_lsm6(void){
-	uint8_t addr = 0;
+	uint8_t w_data[2] = {0};
+	uint8_t addr[3] = {0};
 	HAL_StatusTypeDef res = 0;
-	res = HAL_I2C_Mem_Read(&hi2c2, LSM6, WHO_AM_I, 1, &addr, 1, 10);
+	w_data[0] = WHO_I_AM | 0x80;
+	res = SPI_read(&hspi2, lsm6_cs, w_data, 1, addr, 3, 100);
 	if (res != HAL_OK){
 		return res;
 	}
-	return addr;
+	return addr[0];
 }
 
-uint8_t whoIam_lis3(void){
-	uint8_t addr = 0;
+uint8_t whoIam_lsm303(void){
+	uint8_t w_data[2] = {0};
+	uint8_t addr[3] = {0};
 	HAL_StatusTypeDef res = 0;
-	res = HAL_I2C_Mem_Read(&hi2c2, LIS3_MAGN, WHO_AM_I_MG, 1, &addr, 1, 10);
+	w_data[0] = WHO_AM_I_A | 0x80;
+	res = SPI_read(&hspi2, lsm303_a_cs, w_data, 1, addr, 3, 100);
 	if (res != HAL_OK){
 		return res;
 	}
-	return addr;
+ 	return addr[0];
 }
+
 
 HAL_StatusTypeDef gyro_init(void){
-    uint8_t ctrl2_val = 0x54;   //gyro 208Hz-500dps
-//    uint8_t ctrl2_val = 0x44;   //gyro 104Hz-500dps
-    uint8_t ctrl3_val = 0x04;   // block data update - reg addr auto incr
-    uint8_t wakeUp = 0x10;
-    uint8_t ctrl7_val = 0xE0;	//HPF and HighPerf on
-    HAL_I2C_Mem_Write(&hi2c2, LSM6, WAKE_UP_DUR, I2C_MEMADD_SIZE_8BIT, &wakeUp, 1, 20);
-    HAL_I2C_Mem_Write(&hi2c2, LSM6, CTRL2_G, I2C_MEMADD_SIZE_8BIT, &ctrl2_val, 1, 20);
-    HAL_I2C_Mem_Write(&hi2c2 , LSM6, CTRL7_G, I2C_MEMADD_SIZE_8BIT, &ctrl7_val, 1, 20);
-    return HAL_I2C_Mem_Write(&hi2c2, LSM6, CTRL3_C, I2C_MEMADD_SIZE_8BIT, &ctrl3_val, 1, 20);
+	uint8_t w_data[3] = {0};
+	HAL_StatusTypeDef res = HAL_OK;
+	lsm6_cs.GPIOx = GPIOB;
+	lsm6_cs.pin = GPIO_PIN_12;
+    w_data[0] = CTRL2_G;
+    w_data[1] = 0x5C;   //gyro 208Hz-2000dps
+    res += SPI_write(&hspi2, lsm6_cs, w_data, 2, 20);
+    w_data[0] = CTRL7_G;
+	w_data[1] = 0x00;	//HPF and HighPerf on
+    res += SPI_write(&hspi2, lsm6_cs, w_data, 2, 20);
+    w_data[0] = CTRL3_C;
+	w_data[1] = 0x4C;   // block data update - reg addr auto incr
+    res += SPI_write(&hspi2, lsm6_cs, w_data, 2, 20);
+    return res;
 }
 
 HAL_StatusTypeDef lsm6_acc_init(void){
-    uint8_t ctrl1_val = 0x50;   //acc off
-    uint8_t ctrl10_val = 0x20; //Enable timestamp
-    HAL_I2C_Mem_Write(&hi2c2, LSM6, CTRL1_XL, I2C_MEMADD_SIZE_8BIT, &ctrl1_val, 1, 20);
-    return HAL_I2C_Mem_Write(&hi2c2, LSM6, CTRL10_C, I2C_MEMADD_SIZE_8BIT, &ctrl10_val, 1, 20);
+	uint8_t w_data[2] = {0};
+	HAL_StatusTypeDef res = HAL_OK;
+	lsm6_cs.GPIOx = GPIOB;
+	lsm6_cs.pin = GPIO_PIN_12;
+    w_data[0] = CTRL1_XL;
+//	w_data[1] = 0x50;
+	w_data[1] = 0x00; //Disable acc.
+    res += SPI_write(&hspi2, lsm6_cs, w_data, 2, 20);
+    w_data[0] = CTRL10_C;
+	w_data[1] = 0x20; //Enable timestamp
+	res += SPI_write(&hspi2, lsm6_cs, w_data, 2, 20);
+    return res;
 }
 
 HAL_StatusTypeDef magn_init(void){
+	uint8_t w_data[2] = {0};
+	lsm303_m_cs.GPIOx = GPIOB;
+	lsm303_m_cs.pin = GPIO_PIN_1;
+	lsm303_a_cs.GPIOx = GPIOC;
+	lsm303_a_cs.pin = GPIO_PIN_4;
 	HAL_StatusTypeDef res = HAL_OK;
-	uint8_t ctrl1_val = 0x42;
-	uint8_t ctrl2_val = 0x00; //Full scale 4gauss
-    uint8_t ctrl3_val = 0x00;
-    uint8_t ctrl4_val = 0x08;
-    uint8_t ctrl5_val = 0x40;
-    res = HAL_I2C_Mem_Write(&hi2c2, LIS3_MAGN, CTRL_REG1_MG, I2C_MEMADD_SIZE_8BIT, &ctrl1_val, 1, 50);
-    if (res != HAL_OK)return res;
-    res = HAL_I2C_Mem_Write(&hi2c2, LIS3_MAGN, CTRL_REG3_MG, I2C_MEMADD_SIZE_8BIT, &ctrl3_val, 1, 50);
-    if (res != HAL_OK)return res;
-    res = HAL_I2C_Mem_Write(&hi2c2, LIS3_MAGN, CTRL_REG4_MG, I2C_MEMADD_SIZE_8BIT, &ctrl4_val, 1, 50);
-    if (res != HAL_OK)return res;
-    res = HAL_I2C_Mem_Write(&hi2c2, LIS3_MAGN, CTRL_REG5_MG, I2C_MEMADD_SIZE_8BIT, &ctrl5_val, 1, 50);
+	w_data[0] = CFG_REG_A_M;
+	w_data[1] = 0x8C;
+	res += SPI_write(&hspi2, lsm303_m_cs, w_data, 2, 20);
+//	w_data[0] = CFG_REG_B_M;
+//	w_data[1] = 0x50;
+//	res += SPI_Write(&hspi2, lsm303_m_cs, w_data, 2, 20);
+	w_data[0] = CTRL_REG1_A;
+	w_data[1] = 0x67;  //200Hz Normal mode
+	res += SPI_write(&hspi2, lsm303_a_cs, w_data, 2, 20);
+	w_data[0] = CTRL_REG4_A;
+	w_data[1] = 0x01;
+	res += SPI_write(&hspi2, lsm303_a_cs, w_data, 2, 20);
     return res;
 }
 
 HAL_StatusTypeDef gyro_read(mems_data_t *mems_data){
+	uint8_t w_data[2]={0};
 	uint8_t data[6]={0};
-	uint8_t ts_data[4]={0};
 	int16_t gyro_x, gyro_y, gyro_z;
 	HAL_StatusTypeDef res = HAL_OK;
-    HAL_I2C_Mem_Read(&hi2c2, LSM6, OUTX_L_G, I2C_MEMADD_SIZE_8BIT, data, 6, 50);
-    if (res != HAL_OK){
-		return res;
-	}
-    HAL_I2C_Mem_Read(&hi2c2, LSM6, TIMESTAMP0, I2C_MEMADD_SIZE_8BIT, ts_data, 3, 50);
-    if (res != HAL_OK){
-		return res;
-	}
+	w_data[0] = OUTX_L_G | 0x80;
+	res += SPI_read(&hspi2, lsm6_cs, w_data, 1, data, 6, 50);
+//    if (data[0] == 255){
+//    	res += SPI_read(&hspi2, lsm6_cs, 0x00, 1, data, 6, 50);
+//	}
     gyro_x = ((int16_t)((data[1] << 8) | data[0]));
     gyro_y = ((int16_t)((data[3] << 8) | data[2]));
     gyro_z = ((int16_t)((data[5] << 8) | data[4]));
 #ifndef GYRO_TS
     mems_data->timestamp = osKernelGetTickCount();
 #else
+    uint8_t ts_data[4]={0};
+    w_data[0] = TIMESTAMP0 | 0x80;
+	res += SPI_read(&hspi2, lsm6_cs, w_data, 1, ts_data, 6, 50);
     mems_data->timestamp = (uint32_t) ((ts_data[2]<<16)|(ts_data[1]<<8)|(ts_data[0]));
 #endif
-    mems_data->gyro.gyro_x = - (float)(gyro_x * 0.0177f);// * -1.0f;
-    mems_data->gyro.gyro_y = - (float)(gyro_y * 0.0177);// * -1.0f;
-    mems_data->gyro.gyro_z =   (float)(gyro_z * 0.0177f);// * -1.0f;
+    mems_data->gyro.gyro_x = - (float)(gyro_x * 0.072f);// * -1.0f;			Scaling for 2000dps.
+    mems_data->gyro.gyro_y = - (float)(gyro_y * 0.072);// * -1.0f;
+    mems_data->gyro.gyro_z =   (float)(gyro_z * 0.072f);// * -1.0f;
     return res;
 }
 
@@ -170,36 +169,61 @@ HAL_StatusTypeDef gyro_read(mems_data_t *mems_data){
 //}
 
 HAL_StatusTypeDef lsm6_acc_read(mems_data_t *mems_data){
+	uint8_t w_data[1]={0};
 	uint8_t data[6] = {0};
 	int16_t acc_x, acc_y, acc_z;
 	HAL_StatusTypeDef res = HAL_OK;
-	res = HAL_I2C_Mem_Read(&hi2c2, LSM6, OUTX_L_A, I2C_MEMADD_SIZE_8BIT, data, 6, 50);
+	w_data[0] = OUTX_L_A | 0xC0;
+	res = SPI_read(&hspi2, lsm6_cs, w_data, 1, data, 6, 50);
 	if (res != HAL_OK){
 		return res;
 	}
     acc_x = ((int16_t)((data[1] << 8) | data[0]));
     acc_y = ((int16_t)((data[3] << 8) | data[2]));
     acc_z = ((int16_t)((data[5] << 8) | data[4]));
-    mems_data->acc.acc_x = - (float)(acc_x / 16384.0f);//  * -1.0f;
-    mems_data->acc.acc_y = - (float)(acc_y / 16384.0f);// * -1.0f;
+    mems_data->acc.acc_x = 	(float)(acc_x / 16384.0f);//  * -1.0f;
+    mems_data->acc.acc_y = 	(float)(acc_y / 16384.0f);// * -1.0f;
+    mems_data->acc.acc_z =	(float)(acc_z / 16384.0f);// * -1.0f;
+    return res;
+}
+
+HAL_StatusTypeDef lsm303_acc_read(mems_data_t *mems_data){
+	uint8_t w_data[2]={0};
+	uint8_t data[6] = {0};
+	int16_t acc_x, acc_y, acc_z;
+	HAL_StatusTypeDef res = HAL_OK;
+	w_data[0] = OUT_X_L_A | 0xC0;
+	res = SPI_read(&hspi2, lsm303_a_cs, w_data, 1, data, 6, 50);
+	if (res != HAL_OK){
+		return res;
+	}
+    acc_x = ((int16_t)((data[1] << 8) | data[0]));
+    acc_y = ((int16_t)((data[3] << 8) | data[2]));
+    acc_z = ((int16_t)((data[5] << 8) | data[4]));
+    mems_data->acc.acc_y = 	(float)(acc_x / 16384.0f);//  * -1.0f;
+    mems_data->acc.acc_x = 	(float)(acc_y / 16384.0f);// * -1.0f;
     mems_data->acc.acc_z =	(float)(acc_z / 16384.0f);// * -1.0f;
     return res;
 }
 
 HAL_StatusTypeDef lis3_magn_read(mems_data_t *mems_data){
+	uint8_t w_data[1]={0};
 	uint8_t data[6] = {0};
     int16_t magn_x, magn_y, magn_z;
     HAL_StatusTypeDef res = HAL_OK;
 
-    HAL_I2C_Mem_Read(&hi2c2, LIS3_MAGN, OUT_X_L_MG, I2C_MEMADD_SIZE_8BIT, data, 6, 50);
+    uint8_t OUT_AUTO_I_M = (OUTX_L_REG_M | OUT_AUTO_I);
+
+    w_data[0] = OUTX_L_REG_M | 0xC0;
+	res = SPI_read(&hspi2, lsm303_m_cs, w_data, 1, data, 6, 50);
     if (res != HAL_OK){
     	return res;
 	}
     magn_x = ((int16_t)((data[1] << 8) | data[0]));
     magn_y = ((int16_t)((data[3] << 8) | data[2]));
     magn_z = ((int16_t)((data[5] << 8) | data[4]));
-    mems_data->magn.magn_x = (float)(magn_x / 10.0f);
-    mems_data->magn.magn_y = (float)(magn_y / 10.0f);
+    mems_data->magn.magn_y = (float)(magn_x / 10.0f);
+    mems_data->magn.magn_x = (float)(magn_y / 10.0f);
     mems_data->magn.magn_z = (float)(magn_z / 10.0f);
     return res;
 }
@@ -243,7 +267,7 @@ uint8_t magneto_sample(mems_data_t *mems_data){
 
 uint8_t magnetoSetErrorCoeff(mems_data_t *mems_data){
 	FusionEuler angles;
-	lsm6_acc_read(mems_data);
+	lsm303_acc_read(mems_data);
 	lis3_magn_read(mems_data);
 	gyro_read(mems_data);
 	magn_calib_counter++;
@@ -259,7 +283,7 @@ uint8_t magnetoSetErrorCoeff(mems_data_t *mems_data){
 }
 
 uint8_t acc_sample(mems_data_t *mems_data){
-	lsm6_acc_read(mems_data);
+	lsm303_acc_read(mems_data);
 	acc_samples[acc_calib_counter * 3 + 0] = mems_data->acc.acc_x;
 	acc_samples[acc_calib_counter * 3 + 1] = mems_data->acc.acc_y;
 	acc_samples[acc_calib_counter * 3 + 2] = mems_data->acc.acc_z;
@@ -279,15 +303,13 @@ uint8_t acc_sample(mems_data_t *mems_data){
 //	uint8_t text[20] = {0};
 //	uart_write("Raw:", 0, UART_NYX, 50);
 //	memcpy(text,0,20);
-//	sprintf(text, "%d\r\n,", mems_data->timestamp);
-//	uart_write_debug(text, 50);
-//	memcpy(text,0,20);
-//	sprintf(text, "%d,", mems_data->acc_x);
-//	memcpy(text,0,20);
-//	sprintf(text, "%d,", mems_data->acc_y);
+//	sprintf(text, "%f,", mems_data->acc.acc_x);
 //	uart_write(text, 0, UART_NYX, 50);
 //	memcpy(text,0,20);
-//	sprintf(text, "%d,", mems_data->acc_z);
+//	sprintf(text, "%f,", mems_data->acc.acc_y);
+//	uart_write(text, 0, UART_NYX, 50);
+//	memcpy(text,0,20);
+//	sprintf(text, "%f\r\n,", mems_data->acc.acc_z);
 //	uart_write(text, 0, UART_NYX, 50);
 //	memcpy(text,0,20);
 //	sprintf(text, "%f,", mems_data->gyro.gyro_x);

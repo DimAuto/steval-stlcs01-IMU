@@ -18,7 +18,7 @@
 #include "../flash_memory.h"
 
 #define SAMPLE_PERIOD (0.034f)
-#define SAMPLE_RATE (100)
+#define SAMPLE_RATE (200)
 
 const FusionMatrix gyroscopeMisalignment = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 const FusionVector gyroscopeSensitivity = {1.0f, 1.0f, 1.0f};
@@ -87,12 +87,12 @@ void FusionInit(void){
 	FusionOffsetInitialise(&offset, SAMPLE_RATE);
 	FusionAhrsInitialise(&ahrs);
 	const FusionAhrsSettings settings = {
-	            .convention = FusionConventionNwu,
-	            .gain = 0.7f,
-	            .gyroscopeRange = 500.0f,
+	            .convention = FusionConventionNed,
+	            .gain = 0.8f,
+	            .gyroscopeRange = 2000.0f,
 	            .accelerationRejection = 10.0f,
-	            .magneticRejection = 5.0f,
-	            .recoveryTriggerPeriod = 40 * SAMPLE_RATE,
+	            .magneticRejection = 3.0f,
+	            .recoveryTriggerPeriod = 3 * SAMPLE_RATE,
 	};
 	FusionAhrsSetSettings(&ahrs, &settings);
 	Flash_Read_Vector(GYRO_OFFSET_ADDR, &GyroVector);

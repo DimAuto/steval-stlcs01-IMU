@@ -28,26 +28,22 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32l4xx_hal.h"
+#include "cmsis_os.h"
 
-///#define GYRO_TS
-#define MEMS_SR 5
-#define MEMS_SR_SEC (MEMS_SR / 1000)
+#define FW_VERSION 0x0A
 
 
-void magnCalStart(void);
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
-/* USER CODE BEGIN EFP */
+/* USER DEFINES */
+//#define GYRO_TS
+#define MEMS_SR 5
+#define MEMS_SR_SEC (float)(MEMS_SR / 1000)
 
-/* USER CODE END EFP */
 
-/* Private defines -----------------------------------------------------------*/
-
-/* USER CODE BEGIN Private defines */
-
-/* USER CODE END Private defines */
+void magnCalStart(void);
 
 #ifdef __cplusplus
 }

@@ -18,37 +18,150 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
+#include "lsm6_gyro.h"
+#include "gps_neoM9N.h"
+#include "uart.h"
+#include "ring_buffer.h"
+#include "Fusion/Fusion.h"
+#include "message_handler.h"
+#include "ellipsoid_fit.h"
 
-/* Private includes ----------------------------------------------------------*/
 
-
-/* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
-I2C_HandleTypeDef hi2c2;
-
-UART_HandleTypeDef huart5;
-UART_HandleTypeDef huart1;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
+osThreadId_t calcHeadingTaskHandle;
+osThreadId_t readMemsTaskHandle;
+osThreadId_t printOutTaskHandle;
+osThreadId_t readMessageTaskHandle;
+osThreadId_t sendMessageTaskHandle;
+osThreadId_t gyroCalibrationTaskHandle;
+osThreadId_t magnCalibrationTaskHandle;
+osThreadId_t accCalibrationTaskHandle;
+osThreadId_t checkforInterruptsTaskHandle;
+
+osSemaphoreId_t binSemHandle;
+const osSemaphoreAttr_t binSem_attributes = {
+  .name = "binSem"
+};
+
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 128 * 8,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* USER CODE BEGIN PV */
 
-/* USER CODE END PV */
+const osThreadAttr_t printOutTask_attributes = {
+  .name = "printOutTask",
+  .stack_size = 128 * 10,
+  .priority = (osPriority_t) osPriorityLow,
+};
+
+const osThreadAttr_t calcHeadingTask_attributes = {
+  .name = "calcHeading",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
+const osThreadAttr_t readMemsTask_attributes = {
+  .name = "readMems",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+
+
+const osThreadAttr_t readMessageTaskHandle_attributes = {
+  .name = "readMessage",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+
+const osThreadAttr_t sendMessageTaskHandle_attributes = {
+  .name = "sendMessage",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
+const osThreadAttr_t gyroCalibrationTaskHandle_attributes = {
+  .name = "gyro_calibration",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+
+const osThreadAttr_t magnCalibrationTaskHandle_attributes = {
+  .name = "magn_calibration",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+
+const osThreadAttr_t accCalibrationTaskHandle_attributes = {
+  .name = "acc_calibration",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+
+const osThreadAttr_t checkforInterruptTaskHandle_attributes = {
+  .name = "check_for_Interrupt",
+  .stack_size = 128 * 8,
+  .priority = (osPriority_t) osPriorityLow,
+};
+
+/* Definitions for myMutex01 */
+osMutexId_t debugUartMutex;
+const osMutexAttr_t uartMutex_attributes = {
+  .name = "debugUartMutex"
+};
+
+osMutexId_t i2cMutex;
+const osMutexAttr_t i2cMutex_attributes = {
+  .name = "i2cMutex"
+};
+
+/* Definitions for memsQueue */
+osMessageQueueId_t memsQueueHandle;
+const osMessageQueueAttr_t memsQueue_attributes = {
+  .name = "memsQueue"
+};
+
+osMessageQueueId_t outputQueueHandle;
+const osMessageQueueAttr_t outputQueue_attributes = {
+  .name = "outputQueue"
+};
+
+osMessageQueueId_t messageQueueHandle;
+const osMessageQueueAttr_t messageQueue_attributes = {
+  .name = "messageQueue"
+};
+
+osMessageQueueId_t coorsQueueHandle;
+const osMessageQueueAttr_t coorsQueue_attributes = {
+  .name = "coorsQueue"
+};
+
+// Ack receive event flag
+osEventFlagsId_t ack_rcvd;
+osEventFlagsId_t wait_for_ack;
+osEventFlagsId_t magnetic_interf;
+osEventFlagsId_t magnCalibStart;
+osEventFlagsId_t accCalibStart;
+osEventFlagsId_t gyroCalibStart;
+
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_I2C1_Init(void);
-static void MX_I2C2_Init(void);
-static void MX_UART5_Init(void);
-static void MX_USART1_UART_Init(void);
-void StartDefaultTask(void *argument);
+
+void defaultTask(void *argument);
+void calcHeadingTask(void *argument);
+void readMemsTask(void *argument);
+void printOutTask(void *argument);
+void getCoorsTask(void *argument);
+void readMessageTask(void *argument);
+void sendMessageTask(void *argument);
+void gyroCalibrationTask(void *argument);
+void magnCalibrationTask(void *argument);
+void accCalibrationTask(void *argument);
+void checkForInterrupt(void *argument);
 
 
 /**
@@ -58,31 +171,23 @@ void StartDefaultTask(void *argument);
 int main(void)
 {
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	HAL_Init();
 
-  /* Configure the system clock */
-  SystemClock_Config();
+	/* Configure the system clock */
+	SystemClock_Config();
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_I2C1_Init();
-  MX_I2C2_Init();
-  MX_UART5_Init();
-  MX_USART1_UART_Init();
+	/* Initialize all configured peripherals */
+	MX_GPIO_Init();
 
-  FusionInit();
+	MX_UART5_Init();
 
+	FusionInit();
 
-  if (lsm6_bus_init() != 0){
+	if (lsm6_bus_init() != HAL_OK){
 	  uint8_t Test[] = "Failed to init I2C bus\r\n";
 	  uart_write_debug(Test, 10);
-  }
-  else{
-		  if (lsm6_acc_init() != HAL_OK){
-			  uint8_t Test[] = "Failed to init LSM6 acc\r\n";
-			  uart_write_debug(Test, 10);
-		  }
+	}
+	else{
 		  if (gyro_init() != HAL_OK){
 			  uint8_t Test[] = "Failed to init LSM6 gyro\r\n";
 			  uart_write_debug(Test, 10);
@@ -91,75 +196,61 @@ int main(void)
 			  uint8_t Test[] = "Failed to init LIS3 magn\r\n";
 			  uart_write_debug(Test, 10);
 		  }
-  }
-  if (ublox_i2c_bus_init() != HAL_OK){
-	  uart_write_debug("Failed to Initialize ublox bus\r\n", 10);
-  }
-  else{
-	  UBLOX_transResult res;
-	  res = ubloxInit();
-	  if (res != UBX_ACK){
-		  uart_write_debug("Failed to Initialize UBLOX\r\n", 10);
-	  }
-	  else{
-		  uart_write_debug("Ublox Initialized!\r\n", 10);
-	  }
-  }
+	}
+	    /* Init scheduler */
+	osKernelInitialize();
+	/* USER CODE BEGIN RTOS_MUTEX */
+	debugUartMutex = osMutexNew(&uartMutex_attributes);
+	i2cMutex = osMutexNew(&i2cMutex_attributes);
+	/* USER CODE END RTOS_MUTEX */
+	memsQueueHandle = osMessageQueueNew (8, sizeof(mems_data_t), &memsQueue_attributes);
+	outputQueueHandle = osMessageQueueNew (4, sizeof(FusionEuler), &outputQueue_attributes);
+	messageQueueHandle = osMessageQueueNew (8, RB_SIZE, &messageQueue_attributes);
+	coorsQueueHandle = osMessageQueueNew (8, sizeof(gps_data_t), &coorsQueue_attributes);
+	//  magnVectorQueueHandle = osMessageQueueNew (8, sizeof(double), &magnVectorQueue_attributes);
 
-  /* Init scheduler */
-  osKernelInitialize();
-  /* USER CODE BEGIN RTOS_MUTEX */
-  debugUartMutex = osMutexNew(&uartMutex_attributes);
-  i2cMutex = osMutexNew(&i2cMutex_attributes);
-  /* USER CODE END RTOS_MUTEX */
-  memsQueueHandle = osMessageQueueNew (8, sizeof(mems_data_t), &memsQueue_attributes);
-  outputQueueHandle = osMessageQueueNew (4, sizeof(FusionEuler), &outputQueue_attributes);
-  messageQueueHandle = osMessageQueueNew (8, RB_SIZE, &messageQueue_attributes);
-  coorsQueueHandle = osMessageQueueNew (8, sizeof(gps_data_t), &coorsQueue_attributes);
-//  magnVectorQueueHandle = osMessageQueueNew (8, sizeof(double), &magnVectorQueue_attributes);
+	/* EVENT FLAG FOR ACK RECEIVE */
+	ack_rcvd = osEventFlagsNew(NULL);
+	wait_for_ack = osEventFlagsNew(NULL);
+	magnetic_interf = osEventFlagsNew(NULL);
+	magnCalibStart = osEventFlagsNew(NULL);
+	accCalibStart = osEventFlagsNew(NULL);
+	gyroCalibStart = osEventFlagsNew(NULL);
+	//							//
 
-  /* EVENT FLAG FOR ACK RECEIVE */
-  ack_rcvd = osEventFlagsNew(NULL);
-  wait_for_ack = osEventFlagsNew(NULL);
-  magnetic_interf = osEventFlagsNew(NULL);
-  magnCalibStart = osEventFlagsNew(NULL);
-  //							//
+	defaultTaskHandle = osThreadNew(defaultTask, NULL, &defaultTask_attributes);
 
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+	readMemsTaskHandle = osThreadNew(readMemsTask, NULL, &readMemsTask_attributes);
 
-  readMemsTaskHandle = osThreadNew(readMemsTask, NULL, &readMemsTask_attributes);
+	printOutTaskHandle = osThreadNew(printOutTask, NULL, &printOutTask_attributes);
 
-//  calcHeadingTaskHandle = osThreadNew(calcHeadingTask, NULL, &calcHeadingTask_attributes);
 
-  printOutTaskHandle = osThreadNew(printOutTask, NULL, &printOutTask_attributes);
+	//  sendMessageTaskHandle = osThreadNew(sendMessageTask, NULL, &sendMessageTaskHandle_attributes);
 
-//  getCoorsTaskHandle = osThreadNew(getCoorsTask, NULL, &getCoorsTask_attributes);
+	readMessageTaskHandle = osThreadNew(readMessageTask, NULL, &readMessageTaskHandle_attributes);
 
-//  sendMessageTaskHandle = osThreadNew(sendMessageTask, NULL, &sendMessageTaskHandle_attributes);
+	gyroCalibrationTaskHandle = osThreadNew(gyroCalibrationTask, NULL, &gyroCalibrationTaskHandle_attributes);
 
-  readMessageTaskHandle = osThreadNew(readMessageTask, NULL, &readMessageTaskHandle_attributes);
+	magnCalibrationTaskHandle = osThreadNew(magnCalibrationTask, NULL, &magnCalibrationTaskHandle_attributes);
 
-  gyroCalibrationTaskHandle = osThreadNew(gyroCalibrationTask, NULL, &gyroCalibrationTaskHandle_attributes);
+	accCalibrationTaskHandle = osThreadNew(accCalibrationTask, NULL, &accCalibrationTaskHandle_attributes);
 
-  magnCalibrationTaskHandle = osThreadNew(magnCalibrationTask, NULL, &magnCalibrationTaskHandle_attributes);
+	checkforInterruptsTaskHandle = osThreadNew(checkForInterrupt, NULL, &checkforInterruptTaskHandle_attributes);
 
-  checkforInterruptsTaskHandle = osThreadNew(checkForInterrupt, NULL, &checkforInterruptTaskHandle_attributes);
+	/*Suspend the calibration tasks*/
+	osThreadSuspend(gyroCalibrationTaskHandle);
+	osThreadSuspend(magnCalibrationTaskHandle);
+	osThreadSuspend(accCalibrationTaskHandle);
+	/* Start scheduler */
+	osKernelStart();
+	/* We should never get here as control is now taken by the scheduler */
+	/* Infinite loop */
+	/* USER CODE BEGIN WHILE */
+	while (1)
+	{
 
-  /*Suspend the gyro-calibration task*/
-  osThreadSuspend(gyroCalibrationTaskHandle);
-  osThreadSuspend(magnCalibrationTaskHandle);
-
-  /* Start scheduler */
-  osKernelStart();
-  /* We should never get here as control is now taken by the scheduler */
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-
-  }
+	}
 }
-
 
 /* CODE BEGIN Header_StartDefaultTask */
 /**
@@ -168,12 +259,11 @@ int main(void)
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+void defaultTask(void *argument)
 {
 //	uint32_t magneticCalibStart = 0;
 	for(;;)
 	{
-		HAL_GPIO_TogglePin(GPIOB,LED2_Pin);
 		uart_receive_it(UART_NYX);
 		osDelay(500);
 	}
@@ -183,31 +273,22 @@ void StartDefaultTask(void *argument)
 void checkForInterrupt(void *argument){
 	for(;;){
 		//Check for enabled interrupt flags
-		if (osEventFlagsWait(magnCalibStart, 0x00000001U, osFlagsWaitAny, 10) == 1){
-			osThreadResume(magnCalibrationTaskHandle);;
+		if (osEventFlagsWait(magnCalibStart, 0x00000001U, osFlagsWaitAny, 50) == 1){
+			osThreadResume(magnCalibrationTaskHandle);
 			osEventFlagsSet(magnCalibStart, 0x00000000U);
+		}
+		if (osEventFlagsWait(gyroCalibStart, 0x00000001U, osFlagsWaitAny, 50) == 1){
+			osThreadResume(gyroCalibrationTaskHandle);
+			osEventFlagsSet(gyroCalibStart, 0x00000000U);
+		}
+		if (osEventFlagsWait(accCalibStart, 0x00000001U, osFlagsWaitAny, 50) == 1){
+			osThreadResume(accCalibrationTaskHandle);
+			osEventFlagsSet(accCalibStart, 0x00000000U);
 		}
 		osDelay(1000);
 	}
 }
 
-void calcHeadingTask(void *argument)
-{
-	mems_data_t mems_data;
-	FusionEuler euler;
-	osStatus_t status;
-	FusionInit();
-
-	for(;;)
-	{
-		status = osMessageQueueGet(memsQueueHandle, &mems_data, NULL, 5U);   // wait for message
-	    if (status == osOK) {
-	    	FusionCalcHeading(&mems_data, &euler);
-	    	osMessageQueuePut(outputQueueHandle, &euler, 0U, 5U);
-	    }
-		osDelay(30);
-	}
-}
 
 void readMemsTask(void *argument)
 {
@@ -221,7 +302,7 @@ void readMemsTask(void *argument)
 		osMessageQueuePut(outputQueueHandle, &euler, 0U, 0U);
 		osDelay(MEMS_SR);
 	}
-	osDelay(MEMS_SR);
+
 }
 
 
@@ -259,24 +340,14 @@ void printOutTask(void *argument)
 			uart_write_debug(text,50);
 			memset(text,0,sizeof(text));
 		}
-		vector = get_magn_vector_magnitude();
-		sprintf(text, "magn: %lf\r\n", vector);
-		uart_write_debug(text,50);
-		memset(text,0,sizeof(text));
+//		vector = get_magn_vector_magnitude();
+//		sprintf(text, "magn: %lf\r\n", vector);
+//		uart_write_debug(text,50);
+//		memset(text,0,sizeof(text));
 		osDelay(140);
 	}
 }
 
-
-void getCoorsTask(void *argument){
-	gps_data_t data;
-	for(;;)
-	{
-		ublox_tick();
-		osMessageQueuePut(coorsQueueHandle, &data, 0U, 0U);
-		osDelay(1700);
-	}
-}
 
 void readMessageTask(void *argument){
 	osStatus_t status;
@@ -348,27 +419,16 @@ void accCalibrationTask(void *argument){
 			osThreadResume(printOutTaskHandle);
 			osThreadTerminate(accCalibrationTaskHandle);
 		}
-		osDelay(50);
+		osDelay(100);
 	}
 }
 
 
 
+////////////SYSTEM INIT/////////////////
 
 
 
-
-
-
-
-/////////////////////////////////////////////SYSTEM INIT/////////////////////////////////////////////////
-
-
-
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -416,170 +476,10 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief I2C1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2C1_Init(void)
-{
-
-  /* USER CODE BEGIN I2C1_Init 0 */
-
-  /* USER CODE END I2C1_Init 0 */
-
-  /* USER CODE BEGIN I2C1_Init 1 */
-
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00702991;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Analogue filter
-  */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Digital filter
-  */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C1_Init 2 */
-
-  /* USER CODE END I2C1_Init 2 */
-
-}
-
-/**
-  * @brief I2C2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2C2_Init(void)
-{
-
-  /* USER CODE BEGIN I2C2_Init 0 */
-
-  /* USER CODE END I2C2_Init 0 */
-
-  /* USER CODE BEGIN I2C2_Init 1 */
-
-  /* USER CODE END I2C2_Init 1 */
-  hi2c2.Instance = I2C2;
-  hi2c2.Init.Timing = 0x00702991;
-  hi2c2.Init.OwnAddress1 = 0;
-  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c2.Init.OwnAddress2 = 0;
-  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Analogue filter
-  */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Digital filter
-  */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C2_Init 2 */
-
-  /* USER CODE END I2C2_Init 2 */
-
-}
-
-/**
   * @brief UART5 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_UART5_Init(void)
-{
-
-  /* USER CODE BEGIN UART5_Init 0 */
-
-  /* USER CODE END UART5_Init 0 */
-
-  /* USER CODE BEGIN UART5_Init 1 */
-
-  /* USER CODE END UART5_Init 1 */
-  huart5.Instance = UART5;
-  huart5.Init.BaudRate = 115200;
-  huart5.Init.WordLength = UART_WORDLENGTH_8B;
-  huart5.Init.StopBits = UART_STOPBITS_1;
-  huart5.Init.Parity = UART_PARITY_NONE;
-  huart5.Init.Mode = UART_MODE_TX_RX;
-  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart5.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart5.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart5) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN UART5_Init 2 */
-
-  /* USER CODE END UART5_Init 2 */
-
-}
-
-/**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
-}
 
 /**
   * @brief GPIO Initialization Function
@@ -588,16 +488,44 @@ static void MX_USART1_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 /* USER CODE BEGIN MX_GPIO_Init_1 */
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOG_CLK_ENABLE();
-  HAL_PWREx_EnableVddIO2();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pins : PB12 PB1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12|GPIO_PIN_1, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, GPIO_PIN_SET);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -655,3 +583,5 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
+
