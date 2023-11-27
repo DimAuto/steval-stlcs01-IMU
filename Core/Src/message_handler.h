@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include "uart.h"
 
 #define SBP_S_ID            0x32
 #define COMM_PROTOCOL_REV   0x01

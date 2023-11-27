@@ -338,7 +338,7 @@
   #include "stm32l4xx_hal_hcd.h"
 #endif /* HAL_HCD_MODULE_ENABLED */
 
-#ifdef HAL_I2C_MODULE_ENABLED
+#ifndef HAL_I2C_MODULE_ENABLED
   #include "stm32l4xx_hal_i2c.h"
 #endif /* HAL_I2C_MODULE_ENABLED */
 

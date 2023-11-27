@@ -8,7 +8,7 @@
 #ifndef FUSION_AHRS_H
 #define FUSION_AHRS_H
 
-#define MAGN_LENGTH_AV_SAMPLES 8
+#define MAGN_LENGTH_AV_SAMPLES 100
 
 //------------------------------------------------------------------------------
 // Includes

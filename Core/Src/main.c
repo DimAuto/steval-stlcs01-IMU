@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "lsm6_gyro.h"
-#include "gps_neoM9N.h"
 #include "uart.h"
 #include "ring_buffer.h"
 #include "Fusion/Fusion.h"
@@ -206,7 +205,6 @@ int main(void)
 	memsQueueHandle = osMessageQueueNew (8, sizeof(mems_data_t), &memsQueue_attributes);
 	outputQueueHandle = osMessageQueueNew (4, sizeof(FusionEuler), &outputQueue_attributes);
 	messageQueueHandle = osMessageQueueNew (8, RB_SIZE, &messageQueue_attributes);
-	coorsQueueHandle = osMessageQueueNew (8, sizeof(gps_data_t), &coorsQueue_attributes);
 	//  magnVectorQueueHandle = osMessageQueueNew (8, sizeof(double), &magnVectorQueue_attributes);
 
 	/* EVENT FLAG FOR ACK RECEIVE */

@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "gps_neoM9N.h"
 #include "message_handler.h"
 #include "uart.h"
 #include "main.h"
@@ -227,17 +226,8 @@ void handler(UART_select device){
         flag_connected_toIris = 1;
         break;
     case 0x51:break;
-    case 0x56:
-        ublox_transmit_message(msg.cmd, device);
-        break;
     case 0x65:
         reportFW(msg.cmd, device);
-        break;
-    case 0x78:
-    	powerManageCfgSet(0x78);
-        break;
-    case 0x80:
-        ublox_transmit_rtc(msg.cmd, device);
         break;
     case 0xA0:
 //        ;

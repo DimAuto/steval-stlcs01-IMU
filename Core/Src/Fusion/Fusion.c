@@ -88,11 +88,11 @@ void FusionInit(void){
 	FusionAhrsInitialise(&ahrs);
 	const FusionAhrsSettings settings = {
 	            .convention = FusionConventionNed,
-	            .gain = 0.8f,
+	            .gain = 0.4f,
 	            .gyroscopeRange = 2000.0f,
 	            .accelerationRejection = 10.0f,
 	            .magneticRejection = 3.0f,
-	            .recoveryTriggerPeriod = 3 * SAMPLE_RATE,
+	            .recoveryTriggerPeriod = 7 * SAMPLE_RATE,
 	};
 	FusionAhrsSetSettings(&ahrs, &settings);
 	Flash_Read_Vector(GYRO_OFFSET_ADDR, &GyroVector);

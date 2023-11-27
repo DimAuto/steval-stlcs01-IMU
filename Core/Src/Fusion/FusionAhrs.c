@@ -182,13 +182,12 @@ void FusionAhrsUpdate(FusionAhrs *const ahrs, const FusionVector gyroscope, cons
     	magn_av_counter = 0;
     }
 
-    if((ahrs->magnVectorLength <= 1.25f) && (ahrs->magnVectorLength >= 0.75f)){
+    if((ahrs->magnVectorLength <= 1.3f) && (ahrs->magnVectorLength >= 0.7f)){
     	ahrs->magnTransientField = 0;
     }
     else{
     	ahrs->magnTransientField = 1;
     }
-
 
     // Calculate direction of gravity indicated by algorithm
     const FusionVector halfGravity = HalfGravity(ahrs);
