@@ -338,10 +338,10 @@ void printOutTask(void *argument)
 			uart_write_debug(text,50);
 			memset(text,0,sizeof(text));
 		}
-//		vector = get_magn_vector_magnitude();
-//		sprintf(text, "magn: %lf\r\n", vector);
-//		uart_write_debug(text,50);
-//		memset(text,0,sizeof(text));
+		vector = get_magn_vector_magnitude();
+		sprintf(text, "magn: %lf\r\n", vector);
+		uart_write_debug(text,50);
+		memset(text,0,sizeof(text));
 		osDelay(140);
 	}
 }

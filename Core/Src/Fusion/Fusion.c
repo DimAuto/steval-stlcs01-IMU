@@ -18,7 +18,7 @@
 #include "../flash_memory.h"
 
 #define SAMPLE_PERIOD (0.034f)
-#define SAMPLE_RATE (200)
+#define SAMPLE_RATE (1000/MEMS_SR)
 
 const FusionMatrix gyroscopeMisalignment = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 const FusionVector gyroscopeSensitivity = {1.0f, 1.0f, 1.0f};
@@ -26,7 +26,7 @@ static FusionVector gyroscopeOffset = {0.0f, 0.0f, 0.0f};
 static FusionMatrix accelerometerMisalignment = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 static FusionVector accelerometerSensitivity = {1.0f, 1.0f, 1.0f};
 static FusionVector accelerometerOffset = {0.0f, 0.0f, 0.0f};
-static FusionMatrix softIronMatrix = {0.0f, 0.0f, 0.0f, 0.0f, 0.0, 0.0f, 0.0f, 0.0f, 0.0f};
+static FusionMatrix softIronMatrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0, 0.0f, 0.0f, 0.0f, 1.0f};
 static FusionVector hardIronOffset = {0.0f, 0.0f, 0.0f};
 
 static uint32_t prv_tick = 0;
@@ -91,7 +91,7 @@ void FusionInit(void){
 	            .gain = 0.4f,
 	            .gyroscopeRange = 2000.0f,
 	            .accelerationRejection = 10.0f,
-	            .magneticRejection = 3.0f,
+	            .magneticRejection = 7.0f,
 	            .recoveryTriggerPeriod = 7 * SAMPLE_RATE,
 	};
 	FusionAhrsSetSettings(&ahrs, &settings);
@@ -152,6 +152,7 @@ void FusionCalcHeading(mems_data_t *memsData, FusionEuler *output_angles){
 	gyroscope = FusionVectorSubtract(gyroscope, gyroscopeOffset);
 	accelerometer = FusionCalibrationInertial(accelerometer, accelerometerMisalignment, accelerometerSensitivity, accelerometerOffset);
 	magnetometer = FusionCalibrationMagnetic(magnetometer, softIronMatrix, hardIronOffset);
+//	magnetometer = FusionVectorSubtract(magnetometer, hardIronOffset);
 
 	// Update gyroscope offset correction algorithm
 	gyroscope = FusionOffsetUpdate(&offset, gyroscope);

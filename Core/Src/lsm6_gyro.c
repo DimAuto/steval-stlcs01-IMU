@@ -125,14 +125,17 @@ HAL_StatusTypeDef magn_init(void){
 	w_data[0] = CFG_REG_A_M;
 	w_data[1] = 0x8C;
 	res += SPI_write(&hspi2, lsm303_m_cs, w_data, 2, 20);
-//	w_data[0] = CFG_REG_B_M;
-//	w_data[1] = 0x50;
-//	res += SPI_Write(&hspi2, lsm303_m_cs, w_data, 2, 20);
+	w_data[0] = CFG_REG_B_M;
+	w_data[1] = 0x01;
+	res += SPI_write(&hspi2, lsm303_m_cs, w_data, 2, 20);
+	w_data[0] = CFG_REG_C_M;
+	w_data[1] = 0x10;
+	res += SPI_write(&hspi2, lsm303_m_cs, w_data, 2, 20);
 	w_data[0] = CTRL_REG1_A;
 	w_data[1] = 0x67;  //200Hz Normal mode
 	res += SPI_write(&hspi2, lsm303_a_cs, w_data, 2, 20);
 	w_data[0] = CTRL_REG4_A;
-	w_data[1] = 0x01;
+	w_data[1] = 0x81;
 	res += SPI_write(&hspi2, lsm303_a_cs, w_data, 2, 20);
     return res;
 }
